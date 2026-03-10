@@ -1,0 +1,559 @@
+{
+  "name": "AI-Powered Receipt Verification with Bank Record Matching",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "receipt-verification",
+        "responseMode": "responseNode",
+        "options": {
+          "binaryPropertyName": "item"
+        }
+      },
+      "id": "3c1ecd75-a4bf-48d6-b3aa-570fa0515499",
+      "name": "Receive Receipt Data",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        288,
+        400
+      ],
+      "webhookId": "f793d98b-c07e-4799-b775-107b20e96bc6"
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash"
+        },
+        "text": "=Extract the information from this receipt and return it as a JSON object with these exact keys:\n- reference_number\n- amount\n- date\n- confidence_score\nIf the receipt matches Ref: {{ $json.body.reference_number }} and Amount: {{ $json.body.payment_amount }}, set the confidence_score to 100. Return ONLY the JSON.",
+        "inputType": "binary",
+        "binaryPropertyName": "item0",
+        "options": {}
+      },
+      "id": "97bc0542-d02f-4932-852b-fd2882691154",
+      "name": "Analyze Receipt Image",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        400
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "mfhhH8BozeJEBFZp",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1W_AS7deD29LtFKxNw5WEB9T7LLkNW66RAMIGo6q9OC4",
+          "mode": "list",
+          "cachedResultName": "Queup",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1W_AS7deD29LtFKxNw5WEB9T7LLkNW66RAMIGo6q9OC4/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1W_AS7deD29LtFKxNw5WEB9T7LLkNW66RAMIGo6q9OC4/edit#gid=0"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Reference Number",
+              "lookupValue": "={{ $json.content.parts[0].text.match(/\"reference_number\":\\s*\"([^\"]+)\"/)[1].trim() }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bee43db1-f6d0-4be7-b1cc-ae3faf2dd884",
+      "name": "Lookup Bank Deposit",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        704,
+        400
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "Q1o10IRwCk2BwDkb",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "id-1",
+              "name": "webhook_reference",
+              "value": "={{ $('Receive Receipt Data').item.json.body.reference_number }}",
+              "type": "string"
+            },
+            {
+              "id": "id-2",
+              "name": "webhook_amount",
+              "value": "={{ $('Receive Receipt Data').item.json.body.payment_amount }}",
+              "type": "number"
+            },
+            {
+              "id": "id-3",
+              "name": "ai_response",
+              "value": "={{ $('Analyze Receipt Image').item.json.content.parts[0].text }}\n",
+              "type": "string"
+            },
+            {
+              "id": "id-4",
+              "name": "db_reference",
+              "value": "={{ $('Lookup Bank Deposit').item.json[\"Reference Number\"].toString().trim() }}\n",
+              "type": "string"
+            },
+            {
+              "id": "id-5",
+              "name": "db_amount",
+              "value": "={{ $('Lookup Bank Deposit').item.json[\"Amount\"] }}\n",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "77f4ad72-cb5c-4668-9d7a-a92dec506468",
+      "name": "Prepare Verification Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        928,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "id-1",
+              "leftValue": "={{ $('Prepare Verification Data').item.json.db_reference }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            },
+            {
+              "id": "id-2",
+              "leftValue": "={{ $('Prepare Verification Data').item.json.webhook_amount }}",
+              "rightValue": "={{ $('Prepare Verification Data').item.json.db_amount }}",
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "id-3",
+              "leftValue": "={{ $('Prepare Verification Data').item.json.ai_response }}",
+              "rightValue": "100",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "da0b3ead-a04b-4925-bf53-ff4cfcaa3718",
+      "name": "Verify Conditions",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1152,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "id-1",
+              "name": "verified",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "id-2",
+              "name": "details",
+              "value": "Found in bank records.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "08f8e8c0-fcbe-4085-b922-d77a5494f68d",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1376,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "id-1",
+              "name": "verified",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "id-2",
+              "name": "details",
+              "value": "Reference number not found in bank records.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d0685988-fbf0-4f27-af88-339c30b48ac6",
+      "name": "Failure Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1376,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "6ce06003-ba99-4bf1-94e1-5c52d1f9aa0f",
+      "name": "Send Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1600,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1W_AS7deD29LtFKxNw5WEB9T7LLkNW66RAMIGo6q9OC4",
+          "mode": "list",
+          "cachedResultName": "Queup",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1W_AS7deD29LtFKxNw5WEB9T7LLkNW66RAMIGo6q9OC4/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1W_AS7deD29LtFKxNw5WEB9T7LLkNW66RAMIGo6q9OC4/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Student Name": "={{ $('Receive Receipt Data').item.json.body.user_name }}",
+            "Status": "PAID",
+            "row_number": "={{ $('Lookup Bank Deposit').item.json.row_number }}\n",
+            "Account Number": "={{ $('Receive Receipt Data').item.json.body.account_number }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "Reference Number",
+              "displayName": "Reference Number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Amount",
+              "displayName": "Amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Date",
+              "displayName": "Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Student Name",
+              "displayName": "Student Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Payment Method",
+              "displayName": "Payment Method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Account Number",
+              "displayName": "Account Number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1808,
+        400
+      ],
+      "id": "1f5718ea-9495-49c2-b885-6d20bbfd4a00",
+      "name": "Update row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "Q1o10IRwCk2BwDkb",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "Receive Receipt Data": [
+      {
+        "json": {
+          "headers": {
+            "host": "cgd.app.n8n.cloud",
+            "user-agent": "python-requests/2.32.5",
+            "content-length": "97279",
+            "accept": "*/*",
+            "accept-encoding": "gzip, br",
+            "cdn-loop": "cloudflare; loops=1; subreqs=1",
+            "cf-connecting-ip": "162.220.232.76",
+            "cf-ew-via": "15",
+            "cf-ipcountry": "US",
+            "cf-ray": "9d896fc2ec344aad-SJC",
+            "cf-visitor": "{\"scheme\":\"https\"}",
+            "cf-worker": "n8n.cloud",
+            "content-type": "multipart/form-data; boundary=12cde322b63fcf38d610fdcd3542ac67",
+            "x-forwarded-for": "162.220.232.76, 104.22.17.13",
+            "x-forwarded-host": "cgd.app.n8n.cloud",
+            "x-forwarded-port": "443",
+            "x-forwarded-proto": "https",
+            "x-forwarded-server": "traefik-prod-users-gwc-45-5cbddff74f-l4thf",
+            "x-is-trusted": "yes",
+            "x-real-ip": "162.220.232.76"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "reference_number": "123456789",
+            "account_number": "3215482846",
+            "payment_method": "gcash",
+            "payment_amount": "1000",
+            "payment_date": "2025-03-31",
+            "user_id": "7aac0b05-7dc4-4047-85b8-9a4feac01b3e",
+            "user_name": "Andrea Pearl Barredo"
+          },
+          "webhookUrl": "https://cgd.app.n8n.cloud/webhook/receipt-verification",
+          "executionMode": "production"
+        },
+        "binary": {
+          "item0": {
+            "mimeType": "image/jpeg",
+            "fileType": "image",
+            "fileExtension": "jpg",
+            "data": "filesystem-v2",
+            "fileName": "att.226TnqAkMQvzZ3xfBFdlxZ4tdIG6v_vMKR2MZ9o98yo.jpeg",
+            "id": "filesystem-v2:workflows/ERK8M28kCmLWZFCJ/executions/temp/binary_data/becf4dc4-68f6-496d-89f8-bdd6268ba3f7",
+            "fileSize": "96.3 kB",
+            "bytes": 96318
+          }
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Prepare Verification Data": {
+      "main": [
+        [
+          {
+            "node": "Verify Conditions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Receive Receipt Data": {
+      "main": [
+        [
+          {
+            "node": "Analyze Receipt Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Receipt Image": {
+      "main": [
+        [
+          {
+            "node": "Lookup Bank Deposit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lookup Bank Deposit": {
+      "main": [
+        [
+          {
+            "node": "Prepare Verification Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Conditions": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failure Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Success Response": {
+      "main": [
+        [
+          {
+            "node": "Send Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Failure Response": {
+      "main": [
+        [
+          {
+            "node": "Send Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Response": {
+      "main": [
+        [
+          {
+            "node": "Update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "6f082907-edf9-44c6-96ce-df5cf9dc10ce",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "31e3ba45f8a8ae12e70a75ffd3c860cb73d620264cf41e666f9afe5fcb12651f"
+  },
+  "id": "ERK8M28kCmLWZFCJ",
+  "tags": []
+}
